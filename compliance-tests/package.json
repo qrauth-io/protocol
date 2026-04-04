@@ -1,0 +1,16 @@
+{
+  "name": "@qrauth/protocol-tests",
+  "version": "1.0.0",
+  "description": "QRVA protocol compliance test suite",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
