@@ -5,7 +5,7 @@
 **Date**: 2026-10-20
 **Authors**: QRAuth Contributors
 
-> **Status note.** Draft. This version specifies the behaviour QRAuth will conform to once the current implementation work is merged; it becomes Final at that point.
+> **Status note.** Draft. The verification procedure (Sections 8 and 9) matches QRAuth as deployed on 2026-10-20. The document becomes Final once the remaining implementation work is merged.
 
 The previous version is kept for reference in [PROTOCOL-v1.md](./PROTOCOL-v1.md). It is historical and is not implemented by current QRAuth releases.
 
@@ -137,7 +137,7 @@ The leaf form is used only by the Merkle batch (Section 7.3). The ECDSA leg and 
 
 ### 6.3 Fields
 
-- **`algVersion`**: the record's algorithm-version string (Section 9), for example `hybrid-ecdsa-slhdsa-v1`. For a record in the transient `ecdsa-pending-slhdsa-v1` state, the signed bytes commit to `hybrid-ecdsa-slhdsa-v1`, the version the record is promoted to; issuers MUST sign, and verifiers MUST reconstruct, the canonical form of such a record with `algVersion = hybrid-ecdsa-slhdsa-v1`.
+- **`algVersion`**: the record's algorithm-version string (Section 9), for example `hybrid-ecdsa-slhdsa-v1`.
 - **`token`**: the token, as encoded in the URL.
 - **`tenantId`**: the issuing tenant's identifier, as stored by the verifier.
 - **`destHash`**: a content-type-aware destination commitment:
@@ -220,7 +220,7 @@ The prefixes `qrauth:ecdsa-canonical:v1:` and `qrauth:merkle-root:v1:` MUST be a
 
 ### 7.6 Issuance (Informative)
 
-In QRAuth, every new QR record is issued with `alg_version = hybrid-ecdsa-slhdsa-v1`. The ECDSA leg is signed immediately. Leaves are queued per signing key and flushed into a batch at 64 leaves or 200 ms, whichever comes first. A record MAY be stored in the transient state `ecdsa-pending-slhdsa-v1` until its batch is signed; a reconciler then promotes it to `hybrid-ecdsa-slhdsa-v1` by attaching the Merkle data, and revokes records that remain pending for one hour. Promotion does not change the signed canonical bytes (Section 6.3).
+In QRAuth, every new QR record is issued with `alg_version = hybrid-ecdsa-slhdsa-v1`. Leaves are queued per signing key and flushed into a batch at 64 leaves or 200 ms, whichever comes first. Issuance waits for both the ECDSA signature and the signed batch before the record is stored, so every stored record carries complete Merkle data. Records MUST NOT be stored or published with `alg_version = ecdsa-pending-slhdsa-v1`; that former transient state is rejected (Section 9.1).
 
 ## 8. Verification Procedure
 
@@ -259,19 +259,18 @@ Verify the DER-encoded ECDSA-P256 signature over `"qrauth:ecdsa-canonical:v1:" |
 
 ### 8.6 Merkle/SLH-DSA leg
 
-For `alg_version = hybrid-ecdsa-slhdsa-v1`, the record MUST carry Merkle data (batch identifier, leaf hash, leaf nonce, inclusion path). A record with this version and missing Merkle data MUST fail.
+For `alg_version = hybrid-ecdsa-slhdsa-v1`, the record MUST carry Merkle data (batch identifier, leaf hash, leaf nonce, inclusion path). A record with this version and any of these missing MUST fail; it MUST NOT be verified on the ECDSA leg alone.
 
-1. **Leaf recomputation.** Compute `leaf' = SHA3-256(0x00 || canonical_leaf)` where `canonical_leaf = canonical_core || "|" || nonce`, using the reconstructed core and the stored nonce. Compare `leaf'` with the leaf hash carried in the proof in constant time. If they differ, fail. The verifier MUST use `leaf'` (not a stored leaf hash) as the starting point of the path walk.
-2. **Path walk.** Starting from `leaf'`, for each path element in order: if the sibling's side is `right`, `current = SHA3-256(0x01 || current || sibling)`; if `left`, `current = SHA3-256(0x01 || sibling || current)`. An element with any other side value is a failure. Compare the result with the batch's stored root in constant time. If they differ, fail.
-3. **Root signature.** Verify the batch's `root_signature` over `"qrauth:merkle-root:v1:" || root` with the SLH-DSA-SHA2-128s public key of the record's signing key. If verification fails, fail.
+1. **Leaf recomputation.** Compute `leaf' = SHA3-256(0x00 || canonical_leaf)` where `canonical_leaf = canonical_core || "|" || nonce`, using the core reconstructed in Section 8.4 (the same bytes the ECDSA leg verifies) and the stored nonce. A nonce that is empty or contains a character forbidden by Section 6.4 MUST fail. Compare `leaf'` with the stored leaf hash in constant time; if they differ, fail. The verifier MUST use `leaf'`, not the stored leaf hash, as the starting point of the path walk.
+2. **Batch resolution.** Resolve the batch by its identifier. An unknown batch MUST fail. The batch MUST belong to the record's tenant; otherwise fail.
+3. **Path walk.** Starting from `leaf'`, for each path element in order: if the sibling's side is `right`, `current = SHA3-256(0x01 || current || sibling)`; if `left`, `current = SHA3-256(0x01 || sibling || current)`. An element with any other side value is a failure. Compare the result with the batch's stored root in constant time. If they differ, fail.
+4. **Root signature.** Verify the batch's `root_signature` over `"qrauth:merkle-root:v1:" || root` with the SLH-DSA-SHA2-128s public key of the record's signing key. If verification fails, fail.
 
 A verifier MAY cache a successful root-signature verification per batch (QRAuth caches for one hour). Failed verifications MUST NOT be cached.
 
-For `alg_version = ecdsa-pending-slhdsa-v1`, the record has no Merkle data yet and is verified on the ECDSA leg only (Section 9.1).
-
 ### 8.7 Result
 
-The signature result is positive only if Section 8.5 passed and, for hybrid records, every step of Section 8.6 passed. The verifier then MAY evaluate location (Section 10) and risk signals (Section 14) before returning a result.
+The signature result is positive only if Section 8.5 and every step of Section 8.6 passed. `hybrid-ecdsa-slhdsa-v1` is the only accepted version in this revision, so every positive result covers both legs, bound to the same canonical core. The verifier then MAY evaluate location (Section 10) and risk signals (Section 14) before returning a result.
 
 A positive signature result shows that the stored verification record (token, tenant, destination commitment, location binding and expiry) was signed with the tenant's keys. It does not show that the physical code is in its original placement: a copy of a genuine code verifies in the same way.
 
@@ -284,12 +283,12 @@ The response format is implementation-defined in this version. It MUST include a
 | `alg_version` | Status | Meaning |
 |---|---|---|
 | `hybrid-ecdsa-slhdsa-v1` | accepted | ECDSA-P256 leg and Merkle/SLH-DSA-SHA2-128s leg; both required. Used for all new issuance. |
-| `ecdsa-pending-slhdsa-v1` | accepted (transient) | ECDSA leg signed; Merkle batch not yet attached. Verifies on the ECDSA leg only until promoted to `hybrid-ecdsa-slhdsa-v1`. |
-| `slhdsa-sha2-128s-v1` | accepted (reserved) | SLH-DSA-SHA2-128s only. Reserved; not issued. Its verification procedure will be specified before first issuance. |
-| `slhdsa-sha2-256s-v1` | accepted (reserved) | SLH-DSA-SHA2-256s only. Reserved; not issued. Its verification procedure will be specified before first issuance. |
+| `slhdsa-sha2-128s-v1` | rejected (reserved) | SLH-DSA-SHA2-128s only. Reserved; not issued. Becomes accepted only in a revision that specifies its verification procedure. |
+| `slhdsa-sha2-256s-v1` | rejected (reserved) | SLH-DSA-SHA2-256s only. Reserved; not issued. Becomes accepted only in a revision that specifies its verification procedure. |
+| `ecdsa-pending-slhdsa-v1` | rejected | Former transient state (ECDSA leg signed, Merkle data not attached). No longer issued. Fails closed. |
 | `ecdsa-p256-sha256-v1` | rejected | QRVA v1 ECDSA-only format. Fails closed. |
 
-The deprecated set is currently empty. A verifier that receives a reserved version for which it does not implement a verification procedure MUST fail.
+`hybrid-ecdsa-slhdsa-v1` is the only accepted version. The deprecated set is currently empty. A version is accepted only when its verification procedure is specified and implemented.
 
 ### 9.2 Semantics
 
@@ -298,7 +297,7 @@ The deprecated set is currently empty. A verifier that receives a reserved versi
 - **rejected**: verification fails, regardless of signature validity. A rejected string stays in the registry so it cannot be re-enabled by accident.
 - **unknown**: any string not in the registry. Verification fails.
 
-The expected lifecycle is unknown → accepted → deprecated → rejected.
+The expected lifecycle is unknown → accepted → deprecated → rejected. A reserved version is registered as rejected and moves to accepted in the revision that specifies its verification procedure.
 
 ### 9.3 Version-bump invariants
 
@@ -470,7 +469,7 @@ A positive result means the stored verification record was signed with the tenan
 
 ### 16.2 Post-quantum coverage
 
-The SLH-DSA-SHA2-128s leg, SHA3-256 hashing, and the HMAC-based constructions are believed to resist known quantum attacks at their stated security levels. The following artifacts in this specification are classical only (vulnerable to a large-scale quantum computer running Shor's algorithm): the ECDSA-P256 leg of the hybrid signature, records in the transient `ecdsa-pending-slhdsa-v1` state, and proximity attestations (ES256). TLS is outside the scope of this document.
+The SLH-DSA-SHA2-128s leg, SHA3-256 hashing, and the HMAC-based constructions are believed to resist known quantum attacks at their stated security levels. The following artifacts in this specification are classical only (vulnerable to a large-scale quantum computer running Shor's algorithm): the ECDSA-P256 leg of the hybrid signature and proximity attestations (ES256). TLS is outside the scope of this document.
 
 ### 16.3 Issuance log
 
@@ -504,7 +503,8 @@ Changes in QRVA v2 relative to v1.0 ([PROTOCOL-v1.md](./PROTOCOL-v1.md)):
 - The canonical form has six `|`-separated fields beginning with `algVersion` and including `tenantId`, with a nonce-extended Merkle leaf form; v1 concatenated four fields without separators.
 - Canonical hashing uses SHA3-256; the destination is committed as a domain-separated, content-type-aware `destHash`; `geoHash` uses fixed-precision formatting and the `none` sentinel.
 - ECDSA signatures are DER-encoded and domain-prefixed; v1 specified unprefixed IEEE P1363.
-- Every record carries an `alg_version` checked against a registry; unknown and rejected versions fail closed.
+- Every record carries an `alg_version` checked against a registry; unknown and rejected versions fail closed. `hybrid-ecdsa-slhdsa-v1` is the only accepted version.
+- Verification recomputes the Merkle leaf from the reconstructed canonical core and the stored nonce and walks the inclusion proof from the recomputed leaf; a hybrid record without complete Merkle data fails.
 - The location match uses `d <= radiusM` without the v1 50 m tolerance.
 - The v1 "transparency log" is replaced by a hash-chained issuance log with stated limits; an RFC 6962-style log is planned (ADR-0001).
 - Proximity attestations and the two webhook systems are specified as shipped; the v1 event schema and trust-score weights are removed.
