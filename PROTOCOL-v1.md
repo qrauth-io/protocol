@@ -1,3 +1,5 @@
+> **Historical. QRVA v1.0 (2026-04-03). Superseded by QRVA v2 ([PROTOCOL.md](./PROTOCOL.md)). Not implemented by current QRAuth releases; v1 tokens (`ecdsa-p256-sha256-v1`) are rejected.**
+
 # QRVA Protocol Specification v1.0
 
 **Status**: Draft
