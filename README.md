@@ -1,4 +1,4 @@
-# QRVA — QR Verification and Attestation Protocol
+# QRVA — QR Verification and Authentication Protocol
 
 An open specification for signing and verifying physical QR codes.
 

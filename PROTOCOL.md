@@ -1,11 +1,11 @@
-# QRVA — QR Verification and Attestation Protocol
+# QRVA — QR Verification and Authentication Protocol
 
 **Version**: 2.0
 **Status**: Draft
 **Date**: 2026-10-20
 **Authors**: QRAuth Contributors
 
-> **Status note.** Draft. The verification procedure (Sections 8 and 9) matches QRAuth as deployed on 2026-10-20. The document becomes Final once the remaining implementation work is merged.
+> **Status note.** Draft. The verification procedure (Sections 8 and 9) matches the QRAuth production deployment of 2026-10-20, 15:20 UTC (platform commit `52f59ca`). The document becomes Final once the remaining implementation work is merged.
 
 The previous version is kept for reference in [PROTOCOL-v1.md](./PROTOCOL-v1.md). It is historical and is not implemented by current QRAuth releases.
 
@@ -481,7 +481,7 @@ Scanner and device coordinates are reported by the client. Neither the location 
 
 ### 16.5 Key management
 
-Tenant private keys SHOULD be encrypted at rest and SHOULD be used only by a signing process isolated from request handling. In QRAuth, tenant ECDSA-P256 and SLH-DSA-SHA2-128s private keys are encrypted at rest with AES-256-GCM, and production signing operations run on a separate signer host. Signers MUST enforce the domain-separation prefixes in Section 7.5.
+Tenant private keys SHOULD be encrypted at rest and SHOULD be used only by a signing process isolated from request handling. In QRAuth, tenant ECDSA-P256 and SLH-DSA-SHA2-128s key pairs are currently generated on the API host, encrypted at rest with AES-256-GCM, and provisioned in that encrypted form to a separate signer host; production signing operations run on the signer host. Signers MUST enforce the domain-separation prefixes in Section 7.5.
 
 Verifiers SHOULD rotate tenant signing keys periodically and MUST keep the public keys needed to verify records that remain in use. QRAuth rotates tenant signing keys every 90 days.
 
